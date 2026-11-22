@@ -1,0 +1,108 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_DB: temporal
+    volumes:
+      - temporal-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal -d temporal"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  temporal:
+    image: temporalio/auto-setup:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: temporal
+      POSTGRES_SEEDS: postgres
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/docker.yaml
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CLI_ADDRESS: temporal:7233
+    ports:
+      - "7233:7233"
+
+  temporal-ui:
+    image: temporalio/ui:latest
+    depends_on:
+      - temporal
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:8233
+    ports:
+      - "8233:8080"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["node", "dist/server.js"]
+    depends_on:
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      LOG_LEVEL: info
+      SUPPLIER_BASE_URL: http://localhost:3000
+      REDIS_URL: redis://redis:6379
+      REDIS_CACHE_TTL_SECONDS: 300
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: default
+      TEMPORAL_TASK_QUEUE: hotel-offer-orchestration
+      SUPPLIER_A_DOWN: "false"
+      SUPPLIER_B_DOWN: "false"
+    ports:
+      - "3000:3000"
+    restart: on-failure
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["node", "dist/temporal/worker.js"]
+    depends_on:
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+      api:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: info
+      SUPPLIER_BASE_URL: http://api:3000
+      REDIS_URL: redis://redis:6379
+      REDIS_CACHE_TTL_SECONDS: 300
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: default
+      TEMPORAL_TASK_QUEUE: hotel-offer-orchestration
+      SUPPLIER_A_DOWN: "false"
+      SUPPLIER_B_DOWN: "false"
+    restart: on-failure
+
+volumes:
+  redis-data:
+  temporal-postgres-data:

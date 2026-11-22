@@ -8,7 +8,7 @@ A Node.js 20 and TypeScript service that coordinates mock hotel suppliers with T
 - **Temporal worker**: Fetches both suppliers concurrently, tolerates one supplier being unavailable, deduplicates results, and stores the offers in Redis.
 - **Redis**: Stores per-city offers in sorted sets and performs score-range queries.
 - **Temporal server and UI**: Temporal runs against Postgres; the UI is available separately on port 8233.
-- **Docker image**: A multi-stage Node 20 Alpine build compiles TypeScript, then installs production dependencies in the runtime image. The same image runs the API or worker.
+- **Docker image**: A multi-stage Node 20 slim build compiles TypeScript, then installs production dependencies in the runtime image. The same image runs the API or worker.
 
 ## Requirements and startup
 
@@ -35,6 +35,16 @@ npm test
 ```
 
 Run Redis and Temporal separately, then set the environment variables below in the shell. Start the API with `npm run dev` and the worker in a second terminal with `npm run worker`.
+
+## Render single-container deployment
+
+The production image includes the Temporal CLI and `start-render.sh`, which starts a local Temporal dev server using SQLite, starts the worker, and then runs the Express API. Deploy the Dockerfile to Render and set its Docker Command to:
+
+```sh
+./start-render.sh
+```
+
+Keep the Dockerfile's default `CMD` unchanged for Docker Compose. On Render, set `TEMPORAL_ADDRESS=127.0.0.1:7233` and provide a reachable Redis URL through `REDIS_URL`; Temporal runs inside the same container, but Redis remains an external dependency. Set `PORT` as provided by Render (the application defaults to `3000`).
 
 ## Environment variables
 
